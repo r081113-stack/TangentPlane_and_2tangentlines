@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>接平面と格子線の3Dインタラクティブ表示</title>
+  <!-- MathJax for LaTeX Rendering -->
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <!-- Plotly.js -->
+  <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Times New Roman', serif, sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background-color: #f8f9fa;
+    }
+    header {
+      background: #2c3e50;
+      color: white;
+      padding: 10px 20px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.2rem;
+      font-weight: normal;
+    }
+    .main-container {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+    #plot {
+      flex: 1;
+      height: 100%;
+    }
+    .controls {
+      width: 320px;
+      background: #ffffff;
+      border-left: 1px solid #e0e0e0;
+      padding: 20px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      box-shadow: -2px 0 5px rgba(0,0,0,0.05);
+      overflow-y: auto;
+    }
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    label {
+      font-size: 0.9rem;
+      color: #333;
+    }
+    input[type=range] {
+      width: 100%;
+    }
+    select {
+      padding: 6px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+    .info-panel {
+      background: #f1f3f5;
+      padding: 12px;
+      border-radius: 6px;
+      border-left: 4px solid #3498db;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      margin-bottom: 4px;
+    }
+    .color-box {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>曲面 $z=f(x,y)$ 上の接平面 $\pi$ と2接線 $l_a, l_b$ の視覚化</h1>
+</header>
+
+<div class="main-container">
+  <div id="plot"></div>
+
+  <div class="controls">
+    <div class="control-group">
+      <label for="function-select">曲面 $z = f(x,y)$ の選択:</label>
+      <select id="function-select">
+        <option value="paraboloid">楕円放物面: $z = 4 - (x^2 + y^2)/2$</option>
+        <option value="saddle">鞍状面: $z = x^2 - y^2$</option>
+        <option value="sinusoidal">波動面: $z = \sin(x) \cdot \cos(y)$</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label for="a-slider">接点 $a$ ( $x$ 座標 ): <span id="a-val">0.5</span></label>
+      <input type="range" id="a-slider" min="-1.5" max="1.5" step="0.1" value="0.5">
+    </div>
+
+    <div class="control-group">
+      <label for="b-slider">接点 $b$ ( $y$ 座標 ): <span id="b-val">0.5</span></label>
+      <input type="range" id="b-slider" min="-1.5" max="1.5" step="0.1" value="0.5">
+    </div>
+
+    <div class="info-panel">
+      <strong>構成要素の凡例:</strong>
+      <div class="legend-item">
+        <div class="color-box" style="background: rgba(41, 128, 185, 0.6);"></div>
+        <span>曲面 $S: z = f(x,y)$</span>
+      </div>
+      <div class="legend-item">
+        <div class="color-box" style="background: rgba(231, 76, 60, 0.5);"></div>
+        <span>接平面 $\pi$</span>
+      </div>
+      <div class="legend-item">
+        <div class="color-box" style="background: rgba(155, 89, 182, 0.3);"></div>
+        <span>平面 A ($x=a$) / 平面 B ($y=b$)</span>
+      </div>
+      <div class="legend-item">
+        <div class="color-box" style="background: #e67e22; height:3px;"></div>
+        <span>切り口の曲線 $u(x), v(y)$</span>
+      </div>
+      <div class="legend-item">
+        <div class="color-box" style="background: #27ae60; height:3px;"></div>
+        <span>接線 $l_a, l_b$</span>
+      </div>
+    </div>
+
+    <div class="info-panel">
+      接平面 $\pi$ は、接点 $(a,b,f(a,b))$ において曲面 $S$ の $x$ 方向の切断線接線 $l_a$ と $y$ 方向の切断線接線 $l_b$ の<strong>双方を完全に含んでいる</strong>ことが、視点を回転させることで確認できます。
+    </div>
+  </div>
+</div>
+
+<script>
+  // 関数の定義と偏導関数
+  const functions = {
+    paraboloid: {
+      f: (x, y) => 4 - (x*x + y*y)/2,
+      dfdx: (x, y) => -x,
+      dfdy: (x, y) => -y,
+      tex: "z = 4 - \\frac{x^2+y^2}{2}"
+    },
+    saddle: {
+      f: (x, y) => x*x - y*y,
+      dfdx: (x, y) => 2*x,
+      dfdy: (x, y) => -2*y,
+      tex: "z = x^2 - y^2"
+    },
+    sinusoidal: {
+      f: (x, y) => Math.sin(x) * Math.cos(y),
+      dfdx: (x, y) => Math.cos(x) * Math.cos(y),
+      dfdy: (x, y) => -Math.sin(x) * Math.sin(y),
+      tex: "z = \\sin(x)\\cos(y)"
+    }
+  };
+
+  let currentFuncKey = 'paraboloid';
+  let a = 0.5;
+  let b = 0.5;
+
+  function generateData() {
+    const fn = functions[currentFuncKey];
+    const N = 40;
+    const xRange = [-2.5, 2.5];
+    const yRange = [-2.5, 2.5];
+    
+    // 1. 曲面 S
+    const xArr = [], yArr = [], zArr = [];
+    const dx = (xRange[1] - xRange[0]) / (N - 1);
+    const dy = (yRange[1] - yRange[0]) / (N - 1);
+
+    for (let i = 0; i < N; i++) {
+      const x = xRange[0] + i * dx;
+      xArr.push(x);
+    }
+    for (let j = 0; j < N; j++) {
+      const y = yRange[0] + j * dy;
+      yArr.push(y);
+    }
+
+    for (let j = 0; j < N; j++) {
+      const row = [];
+      for (let i = 0; i < N; i++) {
+        row.push(fn.f(xArr[i], yArr[j]));
+      }
+      zArr.push(row);
+    }
+
+    const surfaceS = {
+      type: 'surface',
+      x: xArr, y: yArr, z: zArr,
+      colorscale: 'Blues',
+      showscale: false,
+      opacity: 0.75,
+      name: '曲面 S: z=f(x,y)'
+    };
+
+    // 接点 P(a, b, c)
+    const fa = fn.f(a, b);
+    const f_a = fn.dfdx(a, b);
+    const f_b = fn.dfdy(a, b);
+
+    // 2. 接平面 pi: z = f(a,b) + f_a*(x-a) + f_b*(y-b)
+    const planeZ = [];
+    const pSize = 1.2;
+    const pxArr = [a - pSize, a + pSize];
+    const pyArr = [b - pSize, b + pSize];
+    for (let j = 0; j < 2; j++) {
+      const row = [];
+      for (let i = 0; i < 2; i++) {
+        const z = fa + f_a * (pxArr[i] - a) + f_b * (pyArr[j] - b);
+        row.push(z);
+      }
+      planeZ.push(row);
+    }
+
+    const tangentPlane = {
+      type: 'surface',
+      x: pxArr, y: pyArr, z: planeZ,
+      colorscale: [[0, '#e74c3c'], [1, '#e74c3c']],
+      showscale: false,
+      opacity: 0.55,
+      name: '接平面 π'
+    };
+
+    // 3. 切断平面 A (x = a) & B (y = b)
+    const zMin = -3, zMax = 5;
+    const planeA = {
+      type: 'mesh3d',
+      x: [a, a, a, a],
+      y: [yRange[0], yRange[1], yRange[1], yRange[0]],
+      z: [zMin, zMin, zMax, zMax],
+      i: [0, 0], j: [1, 2], k: [2, 3],
+      color: '#9b59b6',
+      opacity: 0.15,
+      name: '平面 A (x=a)'
+    };
+
+    const planeB = {
+      type: 'mesh3d',
+      x: [xRange[0], xRange[1], xRange[1], xRange[0]],
+      y: [b, b, b, b],
+      z: [zMin, zMin, zMax, zMax],
+      i: [0, 0], j: [1, 2], k: [2, 3],
+      color: '#8e44ad',
+      opacity: 0.15,
+      name: '平面 B (y=b)'
+    };
+
+    // 4. 切り口の曲線
+    // 曲線 u(x) = f(x, b)
+    const curveU_x = [], curveU_y = [], curveU_z = [];
+    for (let i = 0; i < N; i++) {
+      const x = xArr[i];
+      curveU_x.push(x);
+      curveU_y.push(b);
+      curveU_z.push(fn.f(x, b));
+    }
+    const curveU = {
+      type: 'scatter3d',
+      mode: 'lines',
+      x: curveU_x, y: curveU_y, z: curveU_z,
+      line: { color: '#d35400', width: 6 },
+      name: '切断面曲線 u(x)'
+    };
+
+    // 曲線 v(y) = f(a, y)
+    const curveV_x = [], curveV_y = [], curveV_z = [];
+    for (let j = 0; j < N; j++) {
+      const y = yArr[j];
+      curveV_x.push(a);
+      curveV_y.push(y);
+      curveV_z.push(fn.f(a, y));
+    }
+    const curveV = {
+      type: 'scatter3d',
+      mode: 'lines',
+      x: curveV_x, y: curveV_y, z: curveV_z,
+      line: { color: '#e67e22', width: 6 },
+      name: '切断面曲線 v(y)'
+    };
+
+    // 5. 接線 l_a と l_b
+    const tLen = 1.0;
+    // l_a : x方向に変化 (y = b, z = fa + f_a*(x-a))
+    const lineA = {
+      type: 'scatter3d',
+      mode: 'lines',
+      x: [a - tLen, a + tLen],
+      y: [b, b],
+      z: [fa - f_a * tLen, fa + f_a * tLen],
+      line: { color: '#27ae60', width: 8 },
+      name: '接線 l_a'
+    };
+
+    // l_b : y方向に変化 (x = a, z = fa + f_b*(y-b))
+    const lineB = {
+      type: 'scatter3d',
+      mode: 'lines',
+      x: [a, a],
+      y: [b - tLen, b + tLen],
+      z: [fa - f_b * tLen, fa + f_b * tLen],
+      line: { color: '#2ecc71', width: 8 },
+      name: '接線 l_b'
+    };
+
+    // 6. 接点 P(a, b, f(a,b))
+    const pointP = {
+      type: 'scatter3d',
+      mode: 'markers+text',
+      x: [a], y: [b], z: [fa],
+      marker: { size: 6, color: '#111111' },
+      text: ['P(a,b,f(a,b))'],
+      textposition: 'top center',
+      name: '接点 P'
+    };
+
+    return [surfaceS, tangentPlane, planeA, planeB, curveU, curveV, lineA, lineB, pointP];
+  }
+
+  function renderPlot() {
+    const data = generateData();
+    const layout = {
+      autosize: true,
+      margin: { l: 0, r: 0, b: 0, t: 0 },
+      scene: {
+        xaxis: { title: 'X (a)' },
+        yaxis: { title: 'Y (b)' },
+        zaxis: { title: 'Z' },
+        camera: {
+          eye: { x: 1.5, y: -1.5, z: 1.2 }
+        }
+      },
+      showlegend: false
+    };
+
+    Plotly.react('plot', data, layout, {responsive: true});
+  }
+
+  // イベントリスナーの設定
+  document.getElementById('a-slider').addEventListener('input', (e) => {
+    a = parseFloat(e.target.value);
+    document.getElementById('a-val').innerText = a.toFixed(1);
+    renderPlot();
+  });
+
+  document.getElementById('b-slider').addEventListener('input', (e) => {
+    b = parseFloat(e.target.value);
+    document.getElementById('b-val').innerText = b.toFixed(1);
+    renderPlot();
+  });
+
+  document.getElementById('function-select').addEventListener('change', (e) => {
+    currentFuncKey = e.target.value;
+    renderPlot();
+  });
+
+  // 初回描画
+  renderPlot();
+</script>
+
+</body>
+</html>
